@@ -2,38 +2,14 @@ const User = require('../models/User');
 const Cart = require("../models/Cart");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
-const dns = require("dns");
-if (dns.setDefaultResultOrder) dns.setDefaultResultOrder("ipv4first");
+const { Resend } = require("resend");
 
 const SECRET_KEY = process.env.SECRET_KEY || "supersecretkey";
 
-/* ================= MAIL CONFIG (Resend SMTP) ================= */
-const transporter = nodemailer.createTransport({
-    host: "smtp.resend.com",
-    port: 587,
-    secure: false,
-    auth: {
-        user: "resend",
-        pass: process.env.RESEND_API_KEY
-    },
-    tls: {
-        rejectUnauthorized: false
-    },
-    family: 4,
-    connectionTimeout: 20000,
-    greetingTimeout: 20000,
-    socketTimeout: 20000
-});
+/* ================= MAIL CONFIG (Resend API) ================= */
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-/* ================= VERIFY SMTP CONNECTION ================= */
-transporter.verify((error, success) => {
-    if (error) {
-        console.error("❌ SMTP ERROR:", error);
-    } else {
-        console.log("✅ SMTP Server is ready to send emails");
-    }
-});
+console.log("✅ Resend API initialized");
 
 /* ================= HELPER: COMPLETE LOGIN PROCESS ================= */
 const proceedToLogin = async (user, req, res) => {
@@ -177,10 +153,10 @@ const signup = async (req, res) => {
             await newUser.save();
         }
 
-        /* ===== SEND OTP EMAIL (FIXED) ===== */
+        /* ===== SEND OTP EMAIL (Resend API) ===== */
         try {
-            const info = await transporter.sendMail({
-                from: `"FullStack Cafe" <${process.env.EMAIL_USER}>`,
+            const response = await resend.emails.send({
+                from: "FullStack Cafe <no-reply@fullstackcafe.com>",
                 to: email,
                 subject: "Verify your FullStack Cafe Account",
                 html: `
@@ -193,7 +169,7 @@ const signup = async (req, res) => {
                 `
             });
 
-            console.log("✅ OTP sent:", info.response);
+            console.log("OTP sent via Resend API:", response.id || response.messageId || "sent");
 
             return res.json({
                 success: true,
@@ -206,7 +182,7 @@ const signup = async (req, res) => {
 
             return res.status(500).json({
                 success: false,
-                message: "Failed to send OTP. Check email configuration."
+                message: "Failed to send OTP. Check Resend API key/configuration."
             });
         }
 
