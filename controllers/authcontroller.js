@@ -269,3 +269,12 @@ module.exports = {
     login,
     logout
 };
+
+app.get("/ping-email", (req,res)=> {
+  try {
+    const { Resend } = require("resend");
+    return res.json({ resend: true, envResend: !!process.env.RESEND_API_KEY });
+  } catch(e) {
+    return res.status(500).json({ resend: false, error: e.message });
+  }
+});
