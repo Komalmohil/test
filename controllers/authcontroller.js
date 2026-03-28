@@ -8,14 +8,18 @@ if (dns.setDefaultResultOrder) dns.setDefaultResultOrder("ipv4first");
 
 const SECRET_KEY = process.env.SECRET_KEY || "supersecretkey";
 
-/* ================= MAIL CONFIG (FIXED) ================= */
+/* ================= MAIL CONFIG (Resend SMTP) ================= */
 const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
+    host: "smtp.resend.com",
     port: 587,
     secure: false,
-    requireTLS: true,
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-    tls: { rejectUnauthorized: false },
+    auth: {
+        user: "resend",
+        pass: process.env.RESEND_API_KEY
+    },
+    tls: {
+        rejectUnauthorized: false
+    },
     family: 4,
     connectionTimeout: 20000,
     greetingTimeout: 20000,
