@@ -3,25 +3,23 @@ const Cart = require("../models/Cart");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
+const dns = require("dns");
+if (dns.setDefaultResultOrder) dns.setDefaultResultOrder("ipv4first");
 
 const SECRET_KEY = process.env.SECRET_KEY || "supersecretkey";
 
 /* ================= MAIL CONFIG (FIXED) ================= */
 const transporter = nodemailer.createTransport({
-    service: "gmail",          // easier and more robust
     host: "smtp.gmail.com",
     port: 587,
     secure: false,
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    },
-    tls: { rejectUnauthorized: false },
     requireTLS: true,
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    tls: { rejectUnauthorized: false },
+    family: 4,
     connectionTimeout: 20000,
     greetingTimeout: 20000,
-    socketTimeout: 20000,
-    family: 4, 
+    socketTimeout: 20000
 });
 
 /* ================= VERIFY SMTP CONNECTION ================= */
