@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cart - Full Stack Cafe</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .cart-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            background: white;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #eee;
+        }
+        .cart-item-img {
+            width: 70px;
+            height: 70px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-right: 15px;
+        }
+        .cart-item-info { flex-grow: 1; }
+        .cart-item-name { font-weight: bold; font-size: 1.1rem; margin-bottom: 5px; }
+        
+        .cart-qty-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #f8f8f8;
+            padding: 5px 15px;
+            border-radius: 20px;
+            margin-right: 20px;
+        }
+        .cart-qty-btn {
+            background: none;
+            border: none;
+            color: var(--main);
+            cursor: pointer;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        .cart-qty-val { font-weight: bold; min-width: 20px; text-align: center; }
+
+        .delete-item-btn {
+            color: #1f1d1d;
+            cursor: pointer;
+            font-size: 1.2rem;
+            transition: 0.2s;
+            margin-left: 10px;
+            background: none;
+            border: none;
+        }
+        .delete-item-btn:hover { transform: scale(1.2); }
+    </style>
+</head>
+<body>
+<%- include('partials/header') %>
+<div id="app-content">
+    <%# Pass server-side cart to frontend safely %>
+    <script>
+        // Use productId instead of name for mapping to ensure uniqueness
+        window.SERVER_CART = <%- JSON.stringify(cart) %>;
+        window.IS_LOGGED_IN = <%= (user ? true : false) %>;
+    </script>
+    
+    <div id="cart-page-wrapper" style="max-width: 1200px; margin: 40px auto; padding: 0 20px;">
+        <div class="cart-container" style="display: flex; gap: 30px; align-items: flex-start;">
+            <div id="cart-main-section" style="flex: 2;">
+                <h2 style="color: var(--main); margin-bottom: 25px; border-bottom: 2px solid #f8f8f8; padding-bottom: 15px;">
+                    <i class="fas fa-shopping-basket" style="color: var(--accent);"></i> Your Selection
+                </h2>
+                <div id="items-wrapper">
+                    </div>
+            </div>
+
+            <div id="cart-summary-section" style="flex: 1; position: sticky; top: 100px; display: none;">
+                <div id="summary-card" style="background: white; padding: 25px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); border: 1px solid #eee;">
+                    <h3 style="margin-top: 0; color: var(--main);">Order Summary</h3>
+                    <div class="summary-line" style="display: flex; justify-content: space-between; margin: 15px 0; color: #666;">
+                        <span>Subtotal</span>
+                        <span id="cartSubtotal">₹0.00</span>
+                    </div>
+                    <div class="summary-line" style="display: flex; justify-content: space-between; margin: 15px 0; color: #666;">
+                        <span>GST (5%)</span>
+                        <span id="cartTax">₹0.00</span>
+                    </div>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    <div class="total-line" style="font-size: 1.4rem; font-weight: 800; display: flex; justify-content: space-between; color: var(--main);">
+                        <span>Total</span>
+                        <span id="cartGrandTotal">₹0.00</span>
+                    </div>
+                    <button id="checkoutBtn" style="width: 100%; margin-top: 25px; padding: 16px; background: var(--accent); color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: bold; cursor: pointer;">
+                        Confirm Order (COD)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+(function() {
+    // 1. Initialize cart
+    let currentCart = (window.SERVER_CART && window.SERVER_CART.length > 0) 
+                    ? window.SERVER_CART 
+                    : JSON.parse(localStorage.getItem('cafe_cart')) || [];
+
+    const saveCartState = (cart) => {
+        currentCart = cart;
+        localStorage.setItem('cafe_cart', JSON.stringify(cart));
+        
+        // Update global badge immediately
+        if (typeof window.updateCartBadge === 'function') {
+            // Calculate total quantity for the badge
+            const totalQty = currentCart.reduce((sum, item) => sum + (item.quantity || 1), 0);
+            window.updateCartBadge(totalQty);
+        }
+        renderCart();
+    };
+
+    // Helper to sync whole cart to server
+    const syncWithServer = async () => {
+        if (!window.IS_LOGGED_IN) return;
+        try {
+            const response = await fetch('/cart/sync', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cartItems: currentCart })
+            });
+            const data = await response.json();
+            
+            // If server returns a fresh count, use it
+            if(data.success && data.cartCount !== undefined) {
+                window.updateCartBadge(data.cartCount);
+            }
+        } catch (err) {
+            console.error("Server sync failed", err);
+        }
+    };
+
+    window.updateCartQty = async (productId, delta) => {
+        const item = currentCart.find(i => (i.productId || i._id) === productId);
+        if (!item) return;
+
+        if (delta < 0 && item.quantity <= 1) {
+            window.removeFromCart(productId);
+            return;
+        }
+
+        item.quantity += delta;
+        saveCartState(currentCart);
+        await syncWithServer();
+    };
+
+    window.removeFromCart = async (productId) => {
+        currentCart = currentCart.filter(i => (i.productId || i._id) !== productId);
+        saveCartState(currentCart);
+        await syncWithServer();
+    };
+
+    const renderCart = () => {
+        const wrapper = document.getElementById('items-wrapper');
+        const summarySection = document.getElementById('cart-summary-section');
+        let subtotal = 0;
+
+        if (currentCart.length === 0) {
+            summarySection.style.display = 'none';
+            wrapper.innerHTML = `
+                <div style="text-align:center; padding: 50px;">
+                    <i class="fas fa-shopping-cart" style="font-size: 3rem; color: #ccc; margin-bottom: 20px; display: block;"></i>
+                    <p style="font-size: 1.2rem; color: #666;">Your cart is empty</p>
+                    <a href="/products" class="btn" style="display: inline-block; margin-top: 15px; color: var(--accent); font-weight: bold;">Go to Menu</a>
+                </div>`;
+            return;
+        }
+
+        summarySection.style.display = 'block';
+
+        wrapper.innerHTML = currentCart.map((item) => {
+            const pId = item.productId || item._id;
+            const itemTotal = item.price * item.quantity;
+            subtotal += itemTotal;
+
+            return `
+                <div class="cart-item">
+                    <img src="${item.image}" class="cart-item-img" onerror="this.src='/images/default-food.png'">
+                    <div class="cart-item-info">
+                        <div class="cart-item-name">${item.name}</div>
+                        <div style="color: #666;">₹${item.price}</div>
+                    </div>
+                    <div class="cart-qty-controls">
+                        <button class="cart-qty-btn" onclick="updateCartQty('${pId}', -1)">-</button>
+                        <span class="cart-qty-val">${item.quantity}</span>
+                        <button class="cart-qty-btn" onclick="updateCartQty('${pId}', 1)">+</button>
+                    </div>
+                    <div style="font-weight:bold; width:80px; text-align:right; color: var(--main);">
+                        ₹${itemTotal.toFixed(2)}
+                    </div>
+                    <button onclick="removeFromCart('${pId}')" class="delete-item-btn">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `;
+        }).join('');
+
+        const tax = subtotal * 0.05;
+        document.getElementById('cartSubtotal').innerText = "₹" + subtotal.toFixed(2);
+        document.getElementById('cartTax').innerText = "₹" + tax.toFixed(2);
+        document.getElementById('cartGrandTotal').innerText = "₹" + (subtotal + tax).toFixed(2);
+    };
+
+    /* ================= UPDATED CHECKOUT WITH TOAST ================= */
+    document.getElementById('checkoutBtn').addEventListener('click', async () => {
+        if (!window.IS_LOGGED_IN) {
+            Toastify({
+                text: "Please login to place an order.",
+                duration: 3000,
+                gravity: "top",
+                position: "right",
+                style: { background: "#ff4757", borderRadius: "10px" }
+            }).showToast();
+            setTimeout(() => window.location.href = "/login", 1500);
+            return;
+        }
+
+        const btn = document.getElementById('checkoutBtn');
+        btn.disabled = true;
+        btn.innerText = "Processing...";
+
+        try {
+            const res = await fetch("/cart/confirm", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ cartItems: currentCart })
+            });
+
+            const data = await res.json();
+            
+            if (data.success) {
+                // SUCCESS TOAST
+                Toastify({
+                    text: "🚀 Order placed successfully!",
+                    duration: 4000,
+                    gravity: "top",
+                    position: "right",
+                    stopOnFocus: true,
+                    style: {
+                        background: "linear-gradient(to right, #00b09b, #96c93d)",
+                        borderRadius: "12px",
+                        fontWeight: "bold"
+                    }
+                }).showToast();
+
+                localStorage.removeItem("cafe_cart");
+                
+                // Redirect after toast shows for a bit
+                setTimeout(() => {
+                    window.location.href = "/products/my-orders";
+                }, 2000);
+
+            } else {
+                Toastify({
+                    text: "❌ " + (data.message || "Checkout failed"),
+                    duration: 4000,
+                    style: { background: "#ff4757", borderRadius: "10px" }
+                }).showToast();
+                btn.disabled = false;
+                btn.innerText = "Confirm Order (COD)";
+            }
+        } catch (err) {
+            Toastify({
+                text: "⚠️ Connection error. Please check your internet.",
+                duration: 4000,
+                style: { background: "#ffa502", borderRadius: "10px" }
+            }).showToast();
+            btn.disabled = false;
+            btn.innerText = "Confirm Order (COD)";
+        }
+    });
+
+    renderCart();
+})();
+</script>
+</div>
+</body>
+<%- include('partials/footer') %>
+</html>
